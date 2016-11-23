@@ -95,7 +95,7 @@ struct textinputbuffer
 
             case SDLK_v:
 #ifdef __APPLE__
-#define MOD_KEYS (KMOD_LMETA|KMOD_RMETA)
+#define MOD_KEYS (KMOD_LGUI|KMOD_RGUI)
 #else
 #define MOD_KEYS (KMOD_LCTRL|KMOD_RCTRL)
 #endif
