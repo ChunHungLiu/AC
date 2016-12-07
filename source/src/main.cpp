@@ -87,8 +87,9 @@ bool initwarning(const char *desc, int level, int type)
 
 SDL_Window *screen = NULL;
 SDL_GLContext glcontext = 0;
-static int screenw = 0, screenh = 0;   // actual current resolution of screen
 
+VAR(screenw, 1, 0, 0);   // actual current resolution of screen/window
+VAR(screenh, 1, 0, 0);
 #define SCR_MINW 320
 #define SCR_MINH 200
 #define SCR_MAXW 10000
@@ -650,7 +651,32 @@ void fpsrange(int *low, int *high)
 
 COMMAND(fpsrange, "ii");
 
-bool keyrepeat = false;
+int keyrepeatmask = 0, textinputmask = 0; // bunches of flags for the same functions
+Uint32 textinputtime = 0;
+
+void keyrepeat(bool on, int mask)
+{
+    if(on) keyrepeatmask |= mask;
+    else keyrepeatmask &= ~mask;
+}
+
+void textinput(bool on, int mask)
+{
+    if(on)
+    {
+        if(!textinputmask)
+        {
+            SDL_StartTextInput();
+            textinputtime = SDL_GetTicks();
+        }
+        textinputmask |= mask;
+    }
+    else
+    {
+        textinputmask &= ~mask;
+        if(!textinputmask) SDL_StopTextInput();
+    }
+}
 
 vector<SDL_Event> events;
 
@@ -763,13 +789,16 @@ void checkinput()
                 }
                 else
                 {
-                    if(!event.key.repeat || keyrepeat) keypress(event.key.keysym.sym, event.key.state==SDL_PRESSED, (SDL_Keymod)event.key.keysym.mod);
+                    if(!event.key.repeat || keyrepeatmask) keypress(event.key.keysym.sym, event.key.state==SDL_PRESSED, (SDL_Keymod)event.key.keysym.mod);
                 }
                 break;
 
             case SDL_TEXTINPUT:
-                EVENTDEBUG(concatformatstring(eb, "(SDL_TEXTINPUT) %s", escapestring(event.text.text)));
-                textinput(event.text.text);
+                EVENTDEBUG(thres = 2; concatformatstring(eb, "(SDL_TEXTINPUT) %s %d %d", escapestring(event.text.text), textinputmask, int(event.text.timestamp - textinputtime)));
+                if(textinputmask && int(event.text.timestamp - textinputtime) >= 5) // mute textinput for a few milliseconds, to avoid receiving the "t" that switched on the console
+                {
+                    processtextinput(event.text.text);
+                }
                 break;
 
             case SDL_WINDOWEVENT:
@@ -1066,15 +1095,6 @@ void initclientlog()  // rotate old logfiles and create new one
     DELETEP(bootclientlog);
 }
 
-/// SDL event filter that drops text input events unless some kind of
-/// text input is enabled (text field in menu item active, chat prompt...)
-int textinputfilter(void *userdata, SDL_Event *event)
-{
-    extern bool saycommandon, menutextinputon;
-    if(event->type != SDL_TEXTINPUT) return 1;
-    return (saycommandon || menutextinputon) ? 1 : 0;
-}
-
 int main(int argc, char **argv)
 {
     ASSERT((GMMASK__BOT ^ GMMASK__MP ^ GMMASK__TEAM ^ GMMASK__FFA ^ GMMASK__TEAMSPAWN ^ GMMASK__FFASPAWN) == GMMASK__ALL);
@@ -1342,8 +1362,6 @@ int main(int argc, char **argv)
     localconnect();
 
     if(initscript) execute(initscript);
-
-    SDL_SetEventFilter(textinputfilter, NULL);
 
     initlog("mainloop");
 
